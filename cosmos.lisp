@@ -20,7 +20,6 @@
 (defconstant +header-allow-tentative-writes+ "x-ms-cosmos-allow-tentative-writes")
 ;; Define constants for header names
 (defconstant +header-is-query+ "x-ms-documentdb-isquery")
-
 ;; Define constants for content types
 (defconstant +content-type-query-json+ "application/query+json")
 (defconstant +content-type-json+ "application/json")
@@ -32,6 +31,7 @@
 ;;collections / containers
 (defconstant +header-offer-throughput+ "x-ms-offer-throughput")
 (defconstant +header-offer-autopilot+ "x-ms-cosmos-offer-autopilot-settings")
+
 (defstruct cosmos-context
   account-name
   database-name
@@ -40,6 +40,7 @@
   tenant-id
   client-id
   client-secret)
+
 (defun get-access-token-from-cli (account-name)
   (let* ((resource (format nil "https://~A.documents.azure.com" account-name))
          (command (format nil "az account get-access-token --resource ~A --query accessToken --output tsv" resource))
@@ -72,8 +73,12 @@
   (let ((base-url (format nil "https://~A.documents.azure.com"
                           (cosmos-context-account-name context))))
     (cond
+      ((eq resource-type :databases)
+       (format nil "~A/dbs" base-url))
       ((eq resource-type :database)
-       (format nil "~A/dbs/~A" base-url (cosmos-context-database-name context)))
+       (if resource-id
+           (format nil "~A/dbs/~A" base-url resource-id)
+           (format nil "~A/dbs/~A" base-url (cosmos-context-database-name context))))
       ((eq resource-type :collections)
        (format nil "~A/dbs/~A/colls" base-url (cosmos-context-database-name context)))
       ((eq resource-type :collection)
@@ -152,6 +157,113 @@
                            :content (when content (cl-json:encode-json-to-string content)))))
        ,@body)))
 
+;;;;;;;;;;;;;;
+;; database ;;
+;;;;;;;;;;;;;;
+(defun create-database (context database-def &key offer-throughput
+                                               consistency-level
+                                               session-token
+                                               activity-id)
+  (with-cosmos-context (context)
+    (let* ((url (build-uri context :resource-type :databases))
+           (common-headers (make-common-headers access-token
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id))
+           (create-specific-headers
+             `((,+header-content-type+ . "application/json")
+               ,@(when offer-throughput
+                   `((,+header-offer-throughput+ . ,(write-to-string offer-throughput))))))
+           (headers (append common-headers create-specific-headers)))
+      (multiple-value-bind (body status response-headers)
+          (perform-request url headers :method :post :content database-def)
+        (let ((json-body (cl-json:decode-json-from-string body))
+              (request-charge (gethash +header-request-charge+ response-headers)))
+          (values json-body status response-headers request-charge))))))
+
+(defun list-databases (context &key max-item-count
+                                 continuation-token
+                                 consistency-level
+                                 session-token
+                                 activity-id)
+  (with-cosmos-context (context)
+    (let* ((url (build-uri context :resource-type :databases))
+           (common-headers (make-common-headers access-token
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id))
+           (list-specific-headers
+             `(,@(when max-item-count
+                   `((,+header-max-item-count+ . ,(write-to-string max-item-count))))
+               ,@(when continuation-token
+                   `((,+header-continuation+ . ,continuation-token)))))
+           (headers (append common-headers list-specific-headers)))
+      (multiple-value-bind (body status response-headers)
+          (perform-request url headers :method :get)
+        (let* ((json-body (cl-json:decode-json-from-string body))
+               (new-continuation-token (gethash +header-continuation+ response-headers))
+               (request-charge (gethash +header-request-charge+ response-headers)))
+          (values json-body new-continuation-token status response-headers request-charge))))))
+
+(defun get-database (context database-id &key consistency-level
+                                           session-token
+                                           activity-id)
+  (with-cosmos-context (context)
+    (let* ((url (build-uri context :resource-type :database :resource-id database-id))
+           (headers (make-common-headers access-token
+                                         :consistency-level consistency-level
+                                         :session-token session-token
+                                         :activity-id activity-id)))
+      (multiple-value-bind (body status response-headers)
+          (perform-request url headers :method :get)
+        (let ((json-body (cl-json:decode-json-from-string body))
+              (request-charge (gethash +header-request-charge+ response-headers)))
+          (values json-body status response-headers request-charge))))))
+
+(defun delete-database (context database-id &key consistency-level
+                                              session-token
+                                              activity-id)
+  (with-cosmos-context (context)
+    (let* ((url (build-uri context :resource-type :database :resource-id database-id))
+           (headers (make-common-headers access-token
+                                         :consistency-level consistency-level
+                                         :session-token session-token
+                                         :activity-id activity-id)))
+      (multiple-value-bind (body status response-headers)
+          (perform-request url headers :method :delete)
+        (let ((json-body (when body (cl-json:decode-json-from-string body)))
+              (request-charge (gethash +header-request-charge+ response-headers)))
+          (values json-body status response-headers request-charge))))))
+
+(defun query-databases (context query &key parameters
+                                        max-item-count
+                                        continuation-token
+                                        consistency-level
+                                        session-token
+                                        activity-id)
+  (with-cosmos-context (context)
+    (let* ((url (build-uri context :resource-type :databases))
+           (common-headers (make-common-headers access-token
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id))
+           (query-specific-headers
+             `((,+header-content-type+ . "application/query+json")
+               ,@(when max-item-count
+                   `((,+header-max-item-count+ . ,(write-to-string max-item-count))))
+               ,@(when continuation-token
+                   `((,+header-continuation+ . ,continuation-token)))))
+           (headers (append common-headers query-specific-headers))
+           (content `(("query" . ,query)
+                      ("parameters" . ,(loop for (name . value) in parameters
+                                             collect `(("name" . ,name)
+                                                       ("value" . ,value)))))))
+      (multiple-value-bind (body status response-headers)
+          (perform-request url headers :method :post :content content)
+        (let* ((json-body (cl-json:decode-json-from-string body))
+               (new-continuation-token (gethash +header-continuation+ response-headers))
+               (request-charge (gethash +header-request-charge+ response-headers)))
+          (values json-body new-continuation-token status response-headers request-charge))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; collections / containers ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -159,10 +271,10 @@
                                                    consistency-level session-token activity-id)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :collections))
-           (common-headers (make-common-headers
-                            :consistency-level consistency-level
-                            :session-token session-token
-                            :activity-id activity-id))
+           (common-headers (make-common-headers access-token
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id))
            (create-specific-headers
              `((,+header-content-type+ . "application/json")
                ,@(when offer-throughput
@@ -174,12 +286,12 @@
           (perform-request url headers :method :post :content collection-def)
         (let ((json-body (cl-json:decode-json-from-string body))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
 
 (defun list-collections (context &key consistency-level session-token activity-id)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :collections))
-           (headers (make-common-headers
+           (headers (make-common-headers access-token
                      :consistency-level consistency-level
                      :session-token session-token
                      :activity-id activity-id)))
@@ -187,12 +299,12 @@
           (perform-request url headers :method :get)
         (let ((json-body (cl-json:decode-json-from-string body))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
 
 (defun get-collection (context collection-id &key consistency-level session-token activity-id)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :collection :resource-id collection-id))
-           (headers (make-common-headers
+           (headers (make-common-headers access-token
                      :consistency-level consistency-level
                      :session-token session-token
                      :activity-id activity-id)))
@@ -200,25 +312,25 @@
           (perform-request url headers :method :get)
         (let ((json-body (cl-json:decode-json-from-string body))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
 
 (defun delete-collection (context collection-id &key consistency-level session-token activity-id)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :collection :resource-id collection-id))
-           (headers (make-common-headers
-                     :consistency-level consistency-level
-                     :session-token session-token
-                     :activity-id activity-id)))
+           (headers (make-common-headers access-token
+                                         :consistency-level consistency-level
+                                         :session-token session-token
+                                         :activity-id activity-id)))
       (multiple-value-bind (body status response-headers)
           (perform-request url headers :method :delete)
         (let ((json-body (when body (cl-json:decode-json-from-string body)))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
 
 (defun replace-collection (context collection-id collection-def &key consistency-level session-token activity-id)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :collection :resource-id collection-id))
-           (headers (make-common-headers
+           (headers (make-common-headers access-token
                      :consistency-level consistency-level
                      :session-token session-token
                      :activity-id activity-id)))
@@ -226,7 +338,7 @@
           (perform-request url headers :method :put :content collection-def)
         (let ((json-body (cl-json:decode-json-from-string body))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
 
 ;; Update document functions
 
@@ -234,15 +346,15 @@
                                            consistency-level session-token activity-id)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :documents))
-           (common-headers (make-common-headers
-                            :partition-key partition-key
-                            :consistency-level consistency-level
-                            :session-token session-token
-                            :activity-id activity-id))
+           (common-headers (make-common-headers access-token
+                                                :partition-key partition-key
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id))
            (create-specific-headers
              `((,+header-content-type+ . "application/json")
                ,@(when is-upsert
-                   `((,+header-is-upsert+ . ,(if is-upsert "true" "false"))))
+                   `((,+header-is-upsert+ . ,"true")))
                ,@(when indexing-directive
                    `((,+header-indexing-directive+ . ,(string-downcase (symbol-name indexing-directive)))))))
            (headers (append common-headers create-specific-headers)))
@@ -250,18 +362,18 @@
           (perform-request url headers :method :post :content document)
         (let ((json-body (cl-json:decode-json-from-string body))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
 
 (defun get-document (context document-id &key partition-key consistency-level 
                                            session-token activity-id if-none-match)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :document :resource-id document-id))
-           (common-headers (make-common-headers
-                            :partition-key partition-key
-                            :consistency-level consistency-level
-                            :session-token session-token
-                            :activity-id activity-id
-                            :if-none-match if-none-match))
+           (common-headers (make-common-headers access-token
+                                                :partition-key partition-key
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id
+                                                :if-none-match if-none-match))
            (get-specific-headers
              `((,+header-content-type+ . "application/json")))
            (headers (append common-headers get-specific-headers)))
@@ -269,24 +381,58 @@
           (perform-request url headers)
         (let ((json-body (cl-json:decode-json-from-string body))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
+
+(defun query-documents (context query &key parameters partition-key
+                                        (max-item-count 100)
+                                        continuation-token
+                                        enable-cross-partition
+                                        consistency-level
+                                        session-token
+                                        activity-id)
+  (with-cosmos-context (context)
+    (let* ((url (build-uri context :resource-type :documents))
+           (common-headers (make-common-headers access-token
+                                                :partition-key partition-key
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id))
+           (query-specific-headers
+             `((,+header-content-type+ . "application/query+json")
+               (,+header-max-item-count+ . ,(write-to-string max-item-count))
+               ,@(when continuation-token
+                   `((,+header-continuation+ . ,continuation-token)))
+               ,@(when enable-cross-partition
+                   `((,+header-enable-cross-partition+ . "true")))))
+           (headers (append common-headers query-specific-headers))
+           (content `(("query" . ,query)
+                      ("parameters" . ,(unless (loop for (name . value) in parameters
+                                                     collect `(("name" . ,name)
+                                                               ("value" . ,value)))
+                                         #())))))
+      (multiple-value-bind (body status response-headers)
+          (perform-request url headers :method :post :content content)
+        (let* ((json-body (cl-json:decode-json-from-string body))
+               (new-continuation-token (gethash +header-continuation+ response-headers))
+               (request-charge (gethash +header-request-charge+ response-headers)))
+          (values json-body new-continuation-token status response-headers request-charge))))))
 
 (defun delete-document (context document-id &key partition-key consistency-level 
                                               session-token activity-id if-match)
   (with-cosmos-context (context)
     (let* ((url (build-uri context :resource-type :document :resource-id document-id))
-           (common-headers (make-common-headers
-                            :partition-key partition-key
-                            :consistency-level consistency-level
-                            :session-token session-token
-                            :activity-id activity-id
-                            :if-match if-match))
+           (common-headers (make-common-headers access-token
+                                                :partition-key partition-key
+                                                :consistency-level consistency-level
+                                                :session-token session-token
+                                                :activity-id activity-id
+                                                :if-match if-match))
            (headers common-headers))
       (multiple-value-bind (body status response-headers)
           (perform-request url headers :method :delete)
         (let ((json-body (when body (cl-json:decode-json-from-string body)))
               (request-charge (gethash +header-request-charge+ response-headers)))
-          (list json-body status response-headers request-charge))))))
+          (values json-body status response-headers request-charge))))))
                                         ;Usage examples
 (defun example-usage ()
   (let ((client (make-cosmos-context :account-name "clmobappdev"
@@ -296,7 +442,9 @@
     ;; Query documents
     ;; (query-documents client "SELECT * FROM c"
     ;;                  :parameters nil
-    ;;                  :partition-key "5002534")
+    ;;                  :partition-key nil
+    ;;                  :enable-cross-partition t)
+    
     ;; (query-documents client "SELECT * FROM c WHERE c.wh = @wh"
     ;;                  :parameters '(("@wh" . 19902))
     ;;                  :partition-key "5002534")
@@ -313,5 +461,11 @@
     ;; (delete-document context "123" :partition-key "your-partition-key")
 
     (list-collections client)
+    ;; (list-databases client)
     ))
-
+(multiple-value-bind (body &rest ignore)
+    (example-usage)
+  (loop for collection in (cdr (assoc :*document-collections body))
+        for id-pair = (assoc :ID collection)
+        when id-pair
+          collect (cdr id-pair)))
