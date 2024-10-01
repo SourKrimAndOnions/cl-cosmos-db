@@ -1,0 +1,32 @@
+(in-package :cosmos-db)
+(defconstant +header-authorization+ "Authorization")
+(defconstant +header-content-type+ "Content-Type")
+(defconstant +header-if-match+ "If-Match")
+(defconstant +header-if-none-match+ "If-None-Match")
+(defconstant +header-if-modified-since+ "If-Modified-Since")
+(defconstant +header-user-agent+ "User-Agent")
+(defconstant +header-activity-id+ "x-ms-activity-id")
+(defconstant +header-consistency-level+ "x-ms-consistency-level")
+(defconstant +header-continuation+ "x-ms-continuation")
+(defconstant +header-date+ "x-ms-date")
+(defconstant +header-max-item-count+ "x-ms-max-item-count")
+(defconstant +header-partition-key+ "x-ms-documentdb-partitionkey")
+(defconstant +header-enable-cross-partition+ "x-ms-documentdb-query-enablecrosspartition")
+(defconstant +header-session-token+ "x-ms-session-token")
+(defconstant +header-version+ "x-ms-version")
+(defconstant +header-a-im+ "A-IM")
+(defconstant +header-partition-key-range-id+ "x-ms-documentdb-partitionkeyrangeid")
+(defconstant +header-allow-tentative-writes+ "x-ms-cosmos-allow-tentative-writes")
+;; Define constants for header names
+(defconstant +header-is-query+ "x-ms-documentdb-isquery")
+;; Define constants for content types
+(defconstant +content-type-query-json+ "application/query+json")
+(defconstant +content-type-json+ "application/json")
+;; create document header
+(defconstant +header-is-upsert+ "x-ms-documentdb-is-upsert")
+(defconstant +header-indexing-directive+ "x-ms-indexing-directive")
+;;delete document header
+(defconstant +header-request-charge+ "x-ms-request-charge")
+;;collections / containers
+(defconstant +header-offer-throughput+ "x-ms-offer-throughput")
+(defconstant +header-offer-autopilot+ "x-ms-cosmos-offer-autopilot-settings")
