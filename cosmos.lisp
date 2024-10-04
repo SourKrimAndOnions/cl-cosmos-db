@@ -1,10 +1,7 @@
 (in-package :cosmos-db)
 
-(defun unescape-forward-slashes (json-string)
-  (cl-ppcre:regex-replace-all "\\\\/" json-string "/"))
-
-;; Usage example:
-(unescape-forward-slashes "{\"id\":\"some\",\"partitionKey\":{\"paths\":[\"\\/PartitionKey\"],\"kind\":\"Hash\",\"version\":2}}")
+;; (defun unescape-forward-slashes (json-string)
+;;   (cl-ppcre:regex-replace-all "\\\\/" json-string "/"))
 
 (defun perform-request (url headers &key (method :get) content)
   (multiple-value-bind (body status response-headers)
@@ -54,7 +51,7 @@
                                               session-token
                                               activity-id)
   (let ((url (build-uri context :resource-type :database :resource-id database-id))
-        (headers (make-common-headers :auth (make-auth-headers context :delete :databases database-id)
+        (headers (make-common-headers :auth (make-auth-headers context :delete :database database-id)
                                       :consistency-level consistency-level
                                       :session-token session-token
                                       :activity-id activity-id)))
@@ -146,7 +143,7 @@
                                        :session-token session-token
                                        :activity-id activity-id))
          (content `(("query" . ,query)
-                    ("parameters" . ,(construct-paramaters-header-value parameters)))))
+                    ("parameters" . ,(construct-parameters-header-value parameters)))))
     (perform-request url headers :method :post :content content)))
 
 (defun delete-document (context document-id &key partition-key consistency-level 

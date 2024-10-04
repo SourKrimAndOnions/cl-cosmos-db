@@ -7,6 +7,7 @@
   :depends-on (#:dexador #:cl-json #:uiop #:ironclad)
   :components ((:file "package")
                (:file "constants")
+               (:file "validation")
                (:file "models")
                (:file "uri")
                (:file "headers")
