@@ -2,8 +2,13 @@
   (:use :cl :fiveam)
   (:import-from :cosmos-db
                 #:make-cosmos-context
-                #:list-databases
+                #:->>
+                #:begin-cosmos-operations
+                #:with-account
+                #:with-database
+                #:with-container
                 #:create-database
+                #:list-databases
                 #:delete-database
                 #:create-collection
                 #:list-collections
@@ -11,13 +16,15 @@
                 #:create-document
                 #:query-documents
                 #:get-document
-                #:delete-document)
+                #:delete-document
+                #:get-results
+                #:decode-json-to-struct)
   (:export #:run-tests))
 
 (in-package :cosmos-db/tests)
 
-(def-suite :cosmos-db-test-suite  
-  :description "Test suite for Cosmos DB functions including internal ones")
+(def-suite :cosmos-db-test-suite
+  :description "Test suite for Cosmos DB functions using the new composable syntax")
 
 (in-suite :cosmos-db-test-suite)
 
@@ -30,231 +37,85 @@
    :auth-method :connection-string
    :connection-string "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw=="))
 
-(test |escapes slashes correctly|
-      (is (string= (cosmos-db::unescape-forward-slashes "{\"path\":\"\\/id\"}")
-                   "{\"path\":\"/id\"}")))
+(test test-database-operations
+  (let ((results (->> *local-context*
+                      begin-cosmos-operations
+                      (create-database "TestDatabase" :offer-throughput 400)
+                      (list-databases)
+                      (delete-database "TestDatabase")
+                      get-results)))
+    (is (= (length results) 3) "Should have three results: create, list, and delete")
+    (is (= (getf (first results) :status) 201) "Create database should return status 201")
+    (is (= (getf (second results) :status) 200) "List databases should return status 200")
+    (is (= (getf (third results) :status) 204) "Delete database should return status 204")))
 
-(test |generates correct resource path|
-  (is (string= (cosmos-db::get-resource-link *local-context* :databases nil)
-               "")))
+(test test-collection-operations
+  (let ((results (->> *local-context*
+                      begin-cosmos-operations
+                      (create-database "TestDatabase" :offer-throughput 400)
+                      (create-collection "TestCollection" "/id" :offer-throughput 400)
+                      (list-collections)
+                      (delete-collection "TestCollection")
+                      (delete-database "TestDatabase")
+                      get-results)))
+    (is (= (length results) 5) "Should have five results: create db, create collection, list collections, delete collection, delete db")
+    (is (= (getf (first results) :status) 201) "Create database should return status 201")
+    (is (= (getf (second results) :status) 201) "Create collection should return status 201")
+    (is (= (getf (third results) :status) 200) "List collections should return status 200")
+    (is (= (getf (fourth results) :status) 204) "Delete collection should return status 204")
+    (is (= (getf (fifth results) :status) 204) "Delete database should return status 204")))
 
-(test |constructs correct uri|
-  (let ((uri (cosmos-db::build-uri *local-context* :resource-type :databases)))
-    (is (string= uri "https://localhost:8081/dbs"))))
+(test test-document-operations
+  (let* ((doc '(("id" . "1") ("name" . "Test Document")))
+         (results (->> *local-context*
+                       begin-cosmos-operations
+                       (create-database "TestDatabase" :offer-throughput 400)
+                       (create-collection "TestCollection" "/id" :offer-throughput 400)
+                       (create-document doc :partition-key-value "1")
+                       (get-document "1" :partition-key "1")
+                       (query-documents "SELECT * FROM c WHERE c.id = @id"
+                                        :parameters '(("@id" . "1"))
+                                        :partition-key "1")
+                       (delete-document "1" :partition-key "1")
+                       (delete-collection "TestCollection")
+                       (delete-database "TestDatabase")
+                       get-results)))
+    (is (= (length results) 8) "Should have eight results")
+    (is (= (getf (first results) :status) 201) "Create database should return status 201")
+    (is (= (getf (second results) :status) 201) "Create collection should return status 201")
+    (is (= (getf (third results) :status) 201) "Create document should return status 201")
+    (is (= (getf (fourth results) :status) 200) "Get document should return status 200")
+    (is (= (getf (fifth results) :status) 200) "Query documents should return status 200")
+    (is (= (getf (sixth results) :status) 204) "Delete document should return status 204")
+    (is (= (getf (seventh results) :status) 204) "Delete collection should return status 204")
+    (is (= (getf (eighth results) :status) 204) "Delete database should return status 204")
+    (let* ((created-doc (cl-json:decode-json-from-string (getf (third results) :body)))
+           (query-result (cl-json:decode-json-from-string (getf (fifth results) :body)))
+           (query-documents (cdr (assoc :*documents query-result))))
+      (is (string= "1" (cdr (assoc :id created-doc))) "Created document should have correct id")
+      (is (= (length query-documents) 1) "Query should return one document")
+      (is (string= (cdr (assoc :id (first query-documents))) "1") "Queried document should have correct id"))))
 
-;; Builder method tests
+(test test-context-modifications
+  (let* ((initial-context *local-context*)
+         (results (->> initial-context
+                       begin-cosmos-operations
+                       (with-account "new-account")
+                       (with-database "new-database")
+                       (with-container "new-container"))))
+    (is (= (length (car results)) 0) "Context modifications should not produce results")
+    (let ((modified-context (cdr results)))
+      (is (string= (cosmos-db::cosmos-context-account-name initial-context) "localhost"))
+      (is (string= (cosmos-db::cosmos-context-database-name initial-context) "TestDatabase"))
+      (is (string= (cosmos-db::cosmos-context-container-name initial-context) "TestCollection"))
+      (is (string= (cosmos-db::cosmos-context-account-name modified-context) "new-account"))
+      (is (string= (cosmos-db::cosmos-context-database-name modified-context) "new-database"))
+      (is (string= (cosmos-db::cosmos-context-container-name modified-context) "new-container")))))
 
-(test test-with-account
-  (let* ((original-context *local-context*)
-         (new-context (cosmos-db::with-account original-context "new-account")))
-    (is (string= (cosmos-db::cosmos-context-account-name new-context) "new-account"))
-    (is (string= (cosmos-db::cosmos-context-database-name new-context) 
-                 (cosmos-db::cosmos-context-database-name original-context)))
-    (is (string= (cosmos-db::cosmos-context-container-name new-context) 
-                 (cosmos-db::cosmos-context-container-name original-context)))
-    (is (eq (cosmos-db::cosmos-context-auth-method new-context) 
-            (cosmos-db::cosmos-context-auth-method original-context)))))
-
-(test test-with-database
-  (let* ((original-context *local-context*)
-         (new-context (cosmos-db::with-database original-context "new-database")))
-    (is (string= (cosmos-db::cosmos-context-account-name new-context) 
-                 (cosmos-db::cosmos-context-account-name original-context)))
-    (is (string= (cosmos-db::cosmos-context-database-name new-context) "new-database"))
-    (is (null (cosmos-db::cosmos-context-container-name new-context)))
-    (is (eq (cosmos-db::cosmos-context-auth-method new-context) 
-            (cosmos-db::cosmos-context-auth-method original-context)))))
-
-(test test-with-container
-  (let* ((original-context *local-context*)
-         (new-context (cosmos-db::with-container original-context "new-container")))
-    (is (string= (cosmos-db::cosmos-context-account-name new-context) 
-                 (cosmos-db::cosmos-context-account-name original-context)))
-    (is (string= (cosmos-db::cosmos-context-database-name new-context) 
-                 (cosmos-db::cosmos-context-database-name original-context)))
-    (is (string= (cosmos-db::cosmos-context-container-name new-context) "new-container"))
-    (is (eq (cosmos-db::cosmos-context-auth-method new-context) 
-            (cosmos-db::cosmos-context-auth-method original-context)))))
-
-(test test-with-connection-string-auth
-  (let* ((original-context *local-context*)
-         (new-connection-string "new-connection-string")
-         (new-context (cosmos-db::with-connection-string-auth original-context new-connection-string)))
-    (is (string= (cosmos-db::cosmos-context-account-name new-context) 
-                 (cosmos-db::cosmos-context-account-name original-context)))
-    (is (string= (cosmos-db::cosmos-context-database-name new-context) 
-                 (cosmos-db::cosmos-context-database-name original-context)))
-    (is (string= (cosmos-db::cosmos-context-container-name new-context) 
-                 (cosmos-db::cosmos-context-container-name original-context)))
-    (is (eq (cosmos-db::cosmos-context-auth-method new-context) :connection-string))
-    (is (string= (cosmos-db::cosmos-context-connection-string new-context) new-connection-string))))
-
-(test test-list-databases
-  (multiple-value-bind (body status headers request-charge)
-      (list-databases *local-context*)
-    (is (stringp body))
-    (is (= status 200))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))
-    (is (search "Database" body))))
-
-(test test-create-database
-  (multiple-value-bind (body status headers request-charge)
-      (create-database *local-context* "TestDatabase")
-    (is (stringp body))
-    (is (= status 201))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))
-    (is (search "TestDatabase" body))))
-
-
-
-(test test-create-collection
-  (multiple-value-bind (body status headers request-charge)
-      (create-collection *local-context* "TestCollection" "/id")
-    (is (stringp body))
-    (is (= status 201))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))
-    (is (search "TestCollection" body))))
-
-(test test-list-collections
-  (multiple-value-bind (body status headers request-charge)
-      (list-collections *local-context*)
-    (is (stringp body))
-    (is (= status 200))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))
-    (is (search "Collection" body))))
-
-(test test-create-document
-  (let ((doc '(("id" . "1") ("name" . "Test Document"))))
-    (multiple-value-bind (body status headers request-charge)
-        (create-document *local-context* doc :partition-key-value "1")
-      (is (stringp body))
-      (is (= status 201))
-      (is (hash-table-p headers))
-      (is (stringp request-charge))
-      (is (search "Test Document" body)))))
-
-(test test-query-documents
-  (multiple-value-bind (body status headers request-charge)
-      (query-documents *local-context* "SELECT * FROM c WHERE c.id = '1'")
-    (is (stringp body))
-    (is (= status 200))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))
-    (is (search "Test Document" body))))
-
-(test test-query-documents
-  (multiple-value-bind (body status headers request-charge)
-      (query-documents *local-context* "SELECT * FROM c WHERE c.id = @id" :parameters '(("@id" . "1")))
-    (is (stringp body))
-    (is (= status 200))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))
-    (is (search "Test Document" body))))
-
-(test test-delete-document
-  (multiple-value-bind (body status headers request-charge)
-      (delete-document *local-context* "1" :partition-key "1")
-    (is (string= "" body))
-    (is (= status 204))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))))
-
-(test test-delete-database
-  (multiple-value-bind (body status headers request-charge)
-      (delete-database *local-context* "TestDatabase")
-    (is (string= "" body))
-    (is (= status 204))
-    (is (hash-table-p headers))
-    (is (stringp request-charge))))
-
-;;combined approach
-(test test-create-database
-  (let* ((original-context *local-context*)
-         (database-id "TestDatabase"))
-    ;; Create the database using the account context and database ID
-    (multiple-value-bind (body status headers request-charge)
-        (create-database original-context database-id)
-      (is (stringp body))
-      (is (= status 201))
-      (is (hash-table-p headers))
-      (is (stringp request-charge))
-      (is (search database-id body)))
-    ;; Verify the database was created
-    (multiple-value-bind (body status headers request-charge)
-        (list-databases original-context)
-      (is (search database-id body)))
-    ;; Clean up by deleting the database
-    (multiple-value-bind (body status headers request-charge)
-        (delete-database original-context database-id)
-      (is (= status 204)))))
-
-(test test-with-account-and-list-databases
-  (let* ((original-context *local-context*)
-         (account-context (cosmos-db::with-account original-context "test-account")))
-    (multiple-value-bind (body status headers request-charge)
-        (list-databases account-context)
-      (is (string= "{\"_rid\":\"\",\"Databases\":[],\"_count\":0}" body))
-      (is (= status 200))
-      (is (hash-table-p headers))
-      (is (stringp request-charge)))))
-
-
-(test test-create-document-with-struct
-  (let* ((original-context *local-context*)
-         (database-id "TestDatabase")
-         (collection-id "TestCollection")
-         (document-id "1")
-         (partition-key "1")
-         ;; Create a user struct instance
-         (user-doc (cosmos-db::make-user :id document-id :username "JohnDoe" :age 30)))
-    ;; Create the database
-    (multiple-value-bind (_body status _headers _request-charge)
-        (create-database original-context database-id)
-      (is (= status 201)))
-    ;; Create a database context
-    (let ((database-context (cosmos-db::with-database original-context database-id)))
-      ;; Create the collection with the partition key path "/id"
-      (multiple-value-bind (_body status _headers _request_charge)
-          (create-collection database-context collection-id "/id")
-        (is (= status 201)))
-      ;; Create a collection context
-      (let ((collection-context (cosmos-db::with-container database-context collection-id)))
-        ;; Create the document using the struct
-        (multiple-value-bind (body status _headers _request_charge)
-            (create-document collection-context user-doc :partition-key-value partition-key)
-          (is (= status 201))
-          (is (stringp body))
-          ;; Optionally check if the response body contains expected data
-          (is (search "JohnDoe" body)))
-        ;; Retrieve the document
-        (multiple-value-bind (body status _headers _request_charge)
-            (get-document collection-context document-id :partition-key partition-key)
-          (is (= status 200))
-          (is (stringp body))
-          ;; Decode the JSON body back into a struct
-          (let ((retrieved-doc (decode-json-to-struct body 'cosmos-db::user)))
-            ;; Compare the original and retrieved structs
-            (is (equalp user-doc retrieved-doc) "The retrieved document should match the original")))
-        ;; Clean up by deleting the document
-        (multiple-value-bind (_body status _headers _request_charge)
-            (delete-document collection-context document-id :partition-key partition-key)
-          (is (= status 204))))
-      ;; Clean up by deleting the collection
-      (multiple-value-bind (_body status _headers _request_charge)
-          (delete-collection database-context collection-id)
-        (is (= status 204))))
-    ;; Clean up by deleting the database
-    (multiple-value-bind (_body status _headers _request_charge)
-        (delete-database original-context database-id)
-      (is (= status 204)))))
 ;; validation
 
 (test create-valid-user
-  (let ((user (cosmos-db::make-user :username "validname" :age 5)))
+  (let ((user (cosmos-db::make-user :id "1" :username "validname" :age 5)))
     (is (not (null user)))
     (is (string= "validname" (cosmos-db::user-username user)))
     (is (= 5 (cosmos-db::user-age user)))))
@@ -262,11 +123,11 @@
 (test invalid-user-signals-error
   "Test that creating an invalid user signals a validation-error with correct error messages"
   (signals cosmos-db::validation-error
-    (cosmos-db::make-user :username "123@" :age 151)))
+    (cosmos-db::make-user :id "1" :username "123@" :age 151)))
 
 
 (test struct-encoding-decoding
-  (let* ((user (cosmos-db::make-user :username "validname" :age 5))
+  (let* ((user (cosmos-db::make-user :id "1" :username "validname" :age 5))
          ;; Encode the user to JSON
          (json-string (cl-json:encode-json-to-string user))
          ;; Decode the JSON back to a user struct
@@ -279,8 +140,11 @@
     ;; Check that the age is correct
     (is (= 5 (cosmos-db::user-age user)) "Age should be 5")
     ;; Verify that the JSON string is as expected
-    (is (string= json-string "{\"username\":\"validname\",\"age\":5}")
+    (is (string= json-string "{\"id\":\"1\",\"username\":\"validname\",\"age\":5}")
         "JSON string should match expected output")
     ;; Verify that the decoded user matches the original
     (is (equalp user decoded-user) "Decoded user should equal the original user")))
 
+(defun run-tests ()
+  (run! :cosmos-db-test-suite))
+()

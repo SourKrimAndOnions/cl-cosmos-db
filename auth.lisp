@@ -154,8 +154,10 @@
 (defun get-access-token (context verb resource-type resource-link)
   "Get an access token based on the authentication method in the context."
   (ecase (cosmos-context-auth-method context)
-    (:cli 
-     (get-access-token-from-cli (cosmos-context-account-name context)))
+    (:cli
+     (let* ((bearer-token (get-access-token-from-cli (cosmos-context-account-name context)))
+            (auth-header-value (create-auth-token "aad" "1.0" bearer-token)))
+       auth-header-value))
     (:connection-string 
      (let* ((connection-string (cosmos-context-connection-string context))
             (key (second (split-connection-string connection-string)))

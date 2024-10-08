@@ -7,11 +7,12 @@
   :depends-on (#:dexador #:cl-json #:uiop #:ironclad)
   :components ((:file "package")
                (:file "constants")
-               (:file "validation")
                (:file "models")
+               (:file "validation")
                (:file "uri")
                (:file "headers")
                (:file "auth")
+               (:file "sosos")
                (:file "cosmos"))
   :in-order-to ((asdf:test-op (asdf:test-op "cosmos-db/tests"))))
 
