@@ -1,3 +1,4 @@
+(in-package :cosmos-db)
 ;; Type definitions using only predicates
 (define-type cdr-id
   (stringp)
@@ -53,8 +54,7 @@
   (floatp)
   (number-min-value 0))
 
-(define-type boolean-as-single-float
-  (alexandria-1:positive-single-float-p)
+(define-type number-as-bool
   (number-min-value 0)
   (number-max-value 1))
 
@@ -131,7 +131,7 @@
 
 
 
-(define-validated-struct chargepoint-data-record
+(Define-Validated-struct chargepoint-data-record
     (id :type cdr-id)
   (pk :type (or string null))
   (charge-point-id :type (or charge-point-id null))
@@ -158,16 +158,16 @@
   (max-enqueued-time-utc :type (or timestamp null))
   (k-wh :type (or kilowatt-hours null))
   (date-diff :type (or integer null))
-  (transaction-complete :type (or boolean-as-single-float null))
-  (cdr-not-reliable :type (or boolean-as-single-float null))
+  (transaction-complete :type (or number-as-bool null))
+  (cdr-not-reliable :type (or number-as-bool null))
   (last-meter-value-stop :type (or meter-value null))
   (next-meter-value-start :type (or meter-value null))
-  (negative-meter-value :type (or boolean-as-integer null))
-  (meter-value-drop :type (or boolean-as-integer null))
-  (meter-value-drop-to-zero :type (or boolean-as-integer null))
+  (negative-meter-value :type (or number-as-bool null))
+  (meter-value-drop :type (or number-as-bool null))
+  (meter-value-drop-to-zero :type (or number-as-bool null))
   (bracketed-other-transaction )
-  (unphysical-consumption :type (or boolean-as-integer null))
-  (unphysical-avg-power :type (or boolean-as-integer null))
+  (unphysical-consumption :type (or number-as-bool null))
+  (unphysical-avg-power :type (or number-as-bool null))
   (model :type (or string null))
   (vendor :type (or string null))
   (charge-point-configuration-id :type (or transaction-id null))
@@ -214,11 +214,12 @@
   (impacted-by-frequency-regulation :type (or boolean null))
   (is-partner-location :type (or boolean null))
   (timestamp :type (or timestamp null)))
-;; validation should fail on the below examples.
+
 ;; (make-chargepoint-data-record :id 1)
 
 ;; (make-chargepoint-data-record :id "invalid-id" :charge-point-id 123)
 
+;;invoices
 (define-validated-struct invoice-line
     (line-number :type line-number)
   (item-number :type item-number)
@@ -251,4 +252,48 @@
   (date-modified :type timestamp)
   (url :type url)
   (invoice-lines :type list-of-invoice-line)
+  (timestamp :type timestamp))
+
+;;Charplan
+
+(define-validated-struct reason
+    (strategy :type regular-string)
+  (sub-strategy :type (or regular-string null))
+  (information :type (or regular-string null)))
+
+(define-validated-struct power-consumed
+    (amount :type (or single-float null))
+  (unit :type regular-string))
+
+(define-validated-struct segment
+    (start :type timestamp)
+  (end :type (or timestamp null))
+  (effect :type (or single-float null))
+  (power-consumed :type (or power-consumed null))
+  (reason :type (or reason null)))
+
+(define-validated-struct time-schedule
+    (planned-start :type timestamp)
+  (planned-end :type timestamp)
+  (departure-time :type (or timestamp null))
+  (earliest-finished-at :type (or timestamp null)))
+
+(define-validated-struct charging-plan
+    (time-schedule :type time-schedule)
+  (power-required :type (or single-float null))
+  (segments :type (list-of-segment)))
+
+(define-validated-struct data
+    (charge-point-id :type regular-string)
+  (connector-id :type connector-id)
+  (transaction-id :type transaction-id)
+  (applied-base-strategy :type (or regular-string null))
+  (enqueued-time-stamp-utc :type timestamp)
+  (modified-on-utc :type timestamp)
+  (charging-plan :type (or charging-plan null)))
+
+(define-validated-struct chargingplan-doc
+    (id :type regular-string)
+  (pk :type regular-string)
+  (data :type data)
   (timestamp :type timestamp))

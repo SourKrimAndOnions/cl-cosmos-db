@@ -8,6 +8,7 @@
   :components ((:file "package")
                (:file "constants")
                (:file "models")
+               (:file "json")
                (:file "validation")
                (:file "uri")
                (:file "headers")
