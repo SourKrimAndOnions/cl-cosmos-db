@@ -138,55 +138,6 @@ Parameters:
     (id :type id)
   (username :type username-string)
   (age :type (integer 0 150)))
-(defmacro define-validated-struct (name &rest slots)
-  (let* ((constructor-name (intern (format nil "MAKE-~A" name)))
-         (internal-constructor-name (intern (format nil "%MAKE-~A" name)))
-         (slot-names (mapcar #'car slots)))
-    `(progn
-       (defstruct (,name (:constructor ,internal-constructor-name))
-         ,@(mapcar (lambda (slot)
-                     (if (getf (cdr slot) :type)
-                         `(,(car slot))
-                         slot))
-            slots))
-       (labels ((validate-type (value type slot-name)
-                  (cond
-                    ;; Handle nullability by allowing type to be (or type null)
-                    ((and (consp type) (eq (car type) 'or) (member 'null (cdr type)))
-                     (if (null value)
-                         nil
-                         (validate-type value (cadr type) slot-name)))
-                    ;; Handle basic types and predicates
-                    ((symbolp type)
-                     (let ((predicate (intern (format nil "~A-P" type) *package*)))
-                       (if (fboundp predicate)
-                           (multiple-value-bind (valid error)
-                               (funcall predicate value)
-                             (unless valid
-                               (format nil "Invalid ~A (~A): ~A" slot-name type error)))
-                           (unless (or (null value) (typep value type))
-                             (format nil "Invalid type for ~A (~A): expected ~A, got ~A" slot-name type (type-of value) value)))))
-                    ;; Handle other types using TYPEP
-                    (t
-                     (unless (or (null value) (typep value type))
-                       (format nil "Invalid type for ~A (~A): expected ~A, got ~A" slot-name type (type-of value) value))))))
-         (defun ,constructor-name (&key ,@slot-names)
-           (let ((errors (remove nil
-                                 (loop for name in ',slot-names
-                                       for value in (list ,@slot-names)
-                                       for type in (mapcar #'(lambda (slot) (getf (cdr slot) :type)) ',slots)
-                                       when type
-                                         collect (validate-type value type name)))))
-             (if (null errors)
-                 (,internal-constructor-name
-                  ,@(loop for name in slot-names
-                          collect (intern (symbol-name name) "KEYWORD")
-                          collect name))
-                 (error 'validation-error :errors (remove-if-not #'stringp errors))))))
-       ',name)))
-
-
-
 
 ;; (defmacro define-validated-struct (name &rest slots)
 ;;   (let* ((constructor-name (intern (format nil "MAKE-~A" name)))
