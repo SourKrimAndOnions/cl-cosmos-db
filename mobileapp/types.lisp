@@ -1,5 +1,6 @@
 (in-package :cosmos-db)
 ;; Type definitions using only predicates
+
 (define-type cdr-id
   (stringp)
   (string-min-length 1)
@@ -7,6 +8,36 @@
 
 (define-type regular-string
   (stringp))
+
+(define-type powermarket-id
+  (stringp)
+  (string-matches-pattern "^[A-Z]+-[A-Z]+\\d-\\d+$"))
+
+(define-type powermarket-pk
+  (stringp)
+  (string-matches-pattern "^[A-Z]+-[A-Z]+\\d$"))
+
+(define-type zone
+  (stringp)
+  (string-matches-pattern "^[A-Z]+-[A-Z]+\\d$"))
+
+(define-type start-time
+  (valid-iso8601-string-p))
+
+(define-type end-time
+  (valid-iso8601-string-p))
+
+(define-type price
+  (numberp)
+  (number-min-value 0))
+
+(define-type carbon-intensity
+  (numberp)
+  (number-min-value 0))
+
+(define-type ttl
+  (integerp)
+  (number-min-value 0))
 
 (define-type charge-point-id
   (stringp)
@@ -131,7 +162,7 @@
 
 
 
-(Define-Validated-struct chargepoint-data-record
+(define-validated-struct chargepoint-data-record
     (id :type cdr-id)
   (pk :type (or string null))
   (charge-point-id :type (or charge-point-id null))
@@ -297,3 +328,13 @@
   (pk :type regular-string)
   (data :type data)
   (timestamp :type timestamp))
+
+(define-validated-struct power-market-doc
+    (id :type powermarket-id)
+  (pk :type powermarket-pk)
+  (zone :type zone)
+  (start-time :type start-time)
+  (end-time :type end-time)
+  (price :type price)
+  (carbon-intensity :type carbon-intensity)
+  (ttl :type ttl))
