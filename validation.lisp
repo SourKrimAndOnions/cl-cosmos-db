@@ -124,6 +124,10 @@ Parameters:
 (defun list-max-length (l max)
   (and (listp l) (<= (length l) max)))
 
+(defun valid-iso8601-string-p (str)
+  (and (stringp str)
+       (cl-ppcre:scan "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" str)))
+
 (define-type username-string
   (stringp)
   (string-min-length 3)
