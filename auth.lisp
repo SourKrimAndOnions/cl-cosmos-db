@@ -31,15 +31,31 @@
    (format nil "az account get-access-token --resource ~A --query accessToken --output tsv" 
            resource)))
 
+(define-condition cli-not-logged-in (error)
+  ()
+  (:report (lambda (condition stream)
+             (declare (ignore condition))
+             (format stream "Not logged into Azure CLI. Please run 'az login'."))))
+
+;;todo make restart to show off condition restart login with az cli
+;; download az cl :O!
 (defun validate-cli-token (token)
   "Validate the token obtained from CLI."
-  (if (string= token "")
-      (error "Failed to get token from Azure CLI. Make sure you're logged in with 'az login'.")
-      token))
+  (cond
+    ((string= token "")
+     (error 'cli-not-logged-in))
+    (t
+     token)))
 
 (defun get-access-token-from-cli (account-name)
   "Get an access token for Cosmos DB using Azure CLI."
-  (validate-cli-token (get-cli-access-token (cosmos-resource-url account-name))))
+  (restart-case
+      (validate-cli-token
+       (get-cli-access-token (cosmos-resource-url account-name)))
+    (az-login ()
+      :report "Run 'az login' and retry obtaining the access token."
+      (run-command "az login")
+      (get-access-token-from-cli account-name))))
 
 ;; OAuth token retrieval
 
@@ -82,19 +98,6 @@
 (defun get-access-token-from-connection-string (connection-string)
   "Extract the access token (AccountKey) from a connection string."
   (second (split-connection-string connection-string)))
-
-;; Main access token function
-
-(defun get-access-token (context)
-  "Get an access token based on the authentication method in the context."
-  (ecase (cosmos-context-auth-method context)
-    (:cli (get-access-token-from-cli (cosmos-context-account-name context)))
-    (:connection-string (get-access-token-from-connection-string (cosmos-context-connection-string context)))
-    (:oauth (get-access-token-from-oauth
-             (cosmos-context-tenant-id context)
-             (cosmos-context-client-id context)
-             (cosmos-context-client-secret context)
-             (cosmos-context-account-name context)))))
 
 (defun ad-auth-header (token)
   (format nil "type=aad&ver=1.0&sig=~A" token))

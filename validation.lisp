@@ -26,7 +26,7 @@ Parameters:
          (let ((errors
                  (loop for (pred . args) in ',predicates
                        unless (apply pred value args)
-                         collect (format nil "Failed predicate: ~A~@[ ~{~A~^ ~}~]" pred args))))
+                         collect (format nil "~A~@[ ~{~A~^ ~}~]" pred args))))
            (if errors
                (values nil (format nil "~{~A~^, ~}" errors))
                (values t nil))))
@@ -71,7 +71,7 @@ Parameters:
                                                *package*))
                                    value)
                         (unless valid
-                          (format nil "Invalid ~A: ~A ~& ~A" type error value)))
+                          (format nil "Invalid ~A, Failed predicate(s): ~A ~& ~A" type error value)))
                       (unless (typep value type)
                         (format nil "Invalid type: expected ~A, got ~A" type (type-of value))))))
            (let ((errors (remove nil 
