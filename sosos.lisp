@@ -207,7 +207,7 @@
 ;;      (delete-database "TestDatabase")
 ;;      get-results)
 
-
+;;from alexandria
 (defun compose (function &rest more-functions)
   "Returns a function composed of FUNCTION and MORE-FUNCTIONS that applies its
 arguments to to each in turn, starting from the rightmost of MORE-FUNCTIONS,

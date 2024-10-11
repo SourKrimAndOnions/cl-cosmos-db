@@ -110,3 +110,4 @@
 (decode-json-to-struct *cdr-doc* 'chargepoint-data-record)
 (decode-json-to-struct *chargingplan-doc* 'chargingplan-doc)
 (decode-json-to-struct *powermarket-doc* 'power-market-doc)
+

@@ -1,19 +1,6 @@
 (in-package :cosmos-db)
 
 ;; Basic utility functions
-(defmacro -> (x &rest forms)
-  (labels ((transform (x form)
-             (cond
-               ((null form) x)
-               ((symbolp form) `(,form ,x))
-               ((and (listp form) (eq (car form) 'lambda))
-                `(funcall ,form ,x))
-               ((listp form)
-                `(,(car form) ,@(cdr form) ,x))
-               (t (error "Invalid form in ->> macro")))))
-    (if (null forms)
-        x
-        `(->> ,(transform x (car forms)) ,@(cdr forms)))))
 
 (defun trim-whitespace (string)
   "Remove leading and trailing whitespace from a string."
