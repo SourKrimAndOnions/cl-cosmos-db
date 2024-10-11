@@ -1,23 +1,5 @@
 (in-package :cosmos-db)
 
-(defun compose-cosmos-ops (&rest operations)
-  (labels ((execute-ops (ops context results)
-             (if (null ops)
-                 (let ((final-result (first results)))
-                   (values-list (append (cons context final-result) (list (reverse results)))))
-                 (multiple-value-bind (new-context-or-status response-headers body final-context)
-                     (funcall (car ops) context)
-                   (if (numberp new-context-or-status)
-                       (if (>= new-context-or-status 400)
-                           (error "Cosmos DB operation failed: ~A ~A ~A"
-                                  new-context-or-status response-headers body)
-                           (execute-ops (cdr ops)
-                                        final-context
-                                        (cons (list new-context-or-status response-headers body) results)))
-                       (execute-ops (cdr ops) new-context-or-status results))))))
-    (lambda (initial-context)
-      (execute-ops operations initial-context '()))))
-
 (defun execute-cosmos-op (context method resource-type resource-id &rest args)
   (let* ((content (getf args :content))
          (header-args (alexandria:remove-from-plist args :content))
@@ -31,7 +13,27 @@
          :headers headers
          :content (when content (cl-json:encode-json-to-string content)))
       (declare (ignore uri stream must-close reason-phrase))
-      (values status-code response-headers body))))
+      (values body status-code response-headers context))))
+
+(defun compose-cosmos-ops (&rest operations)
+  (labels ((execute-ops (ops context results)
+             (if (null ops)
+                 (let* ((final-result (first results))
+                        (final-body (first final-result))
+                        (other-results (rest final-result)))
+                   (values-list (cons final-body (cons context (append other-results (list (reverse results)))))))
+                 (multiple-value-bind (body status-code response-headers new-context)
+                     (funcall (car ops) context)
+                   (if (numberp status-code)
+                       (if (>= status-code 400)
+                           (error "Cosmos DB operation failed: ~A ~A ~A"
+                                  status-code response-headers body)
+                           (execute-ops (cdr ops)
+                                        new-context
+                                        (cons (list body status-code response-headers) results)))
+                       (execute-ops (cdr ops) new-context results))))))
+    (lambda (initial-context)
+      (execute-ops operations initial-context '()))))
 
 (defun create-database (database-id &key offer-throughput)
   (lambda (context)
@@ -130,7 +132,8 @@
 
 (defun with-account (account-name)
   (lambda (context)
-    (values (make-cosmos-context
+    (values nil nil nil
+            (make-cosmos-context
              :account-name account-name
              :database-name (cosmos-context-database-name context)
              :container-name (cosmos-context-container-name context)
@@ -139,7 +142,8 @@
 
 (defun with-database (database-name)
   (lambda (context)
-    (values (make-cosmos-context
+    (values nil nil nil
+            (make-cosmos-context
              :account-name (cosmos-context-account-name context)
              :database-name database-name
              :container-name nil
@@ -148,7 +152,8 @@
 
 (defun with-container (container-name)
   (lambda (context)
-    (values (make-cosmos-context
+    (values nil nil nil
+            (make-cosmos-context
              :account-name (cosmos-context-account-name context)
              :database-name (cosmos-context-database-name context)
              :container-name container-name
@@ -169,8 +174,8 @@
 ;;    (with-container "CDR")
 ;;    (query-documents "SELECT * FROM c" :enable-cross-partition t :max-item-count 1)))
 
-;; ;; Run the example
-;; (multiple-value-bind (final-context status-code response-headers body)
+;; ;; ;; Run the example
+;; (multiple-value-bind (body status-code response-headers final-context results)
 ;;     (funcall (example-composed-operation) (make-cosmos-context))
 ;;   (format t "Final context: ~A~%" final-context)
 ;;   (format t "Status code: ~A~%" status-code)
