@@ -4,7 +4,7 @@
   :version "1.0.0"
   :licence "BSD"
   :serial t
-  :depends-on (#:dexador #:cl-json #:uiop #:ironclad)
+  :depends-on (#:dexador #:cl-json #:uiop #:ironclad #:closer-mop)
   :components ((:file "package")
                (:file "constants")
                (:file "models")
@@ -13,7 +13,6 @@
                (:file "uri")
                (:file "headers")
                (:file "auth")
-               (:file "sosos")
                (:file "cosmos"))
   :in-order-to ((asdf:test-op (asdf:test-op "cosmos-db/tests"))))
 
