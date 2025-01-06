@@ -30,35 +30,3 @@
 ;;collections / containers
 (alexandria:define-constant +header-offer-throughput+ "x-ms-offer-throughput" :test #'string=)
 (alexandria:define-constant +header-offer-autopilot+ "x-ms-cosmos-offer-autopilot-settings" :test #'string=)
-
-
-;; (defun format-consistency-level (level)
-;;   (when level (string-downcase (symbol-name level))))
-
-;; (defun format-partition-key (key)
-;;   (when key (format nil "[~S]" key)))
-
-;; (defun bool-to-string (value)
-;;   (when value "true"))
-
-;; (defun number-to-string (value)
-;;   (when value (write-to-string value)))
-
-;; (defun make-common-headers (context &key consistency-level continuation max-item-count
-;;                                       partition-key enable-cross-partition session-token
-;;                                       if-match if-none-match if-modified-since
-;;                                       activity-id allow-tentative-writes)
-;;   (with-headers 
-;;       (+header-version+ . "2018-12-31")
-;;     (+header-date+ . (local-time:format-rfc1123-timestring nil (local-time:now)))
-;;     (+header-consistency-level+ . (format-consistency-level consistency-level))
-;;     (+header-continuation+ . continuation)
-;;     (+header-max-item-count+ . (number-to-string max-item-count))
-;;     (+header-partition-key+ . (format-partition-key partition-key))
-;;     (+header-enable-cross-partition+ . (bool-to-string enable-cross-partition))
-;;     (+header-session-token+ . session-token)
-;;     (+header-if-match+ . if-match)
-;;     (+header-if-none-match+ . if-none-match)
-;;     (+header-if-modified-since+ . if-modified-since)
-;;     (+header-activity-id+ . activity-id)
-;;     (+header-allow-tentative-writes+ . (bool-to-string allow-tentative-writes))))

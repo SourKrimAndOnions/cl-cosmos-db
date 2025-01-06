@@ -1,3 +1,23 @@
 (defpackage #:cosmos-db
   (:use :cl)
-  (:export :make-cosmos-context :with-cosmos-context :query-documents :get-document :list-collections))
+  (:export
+   :alist-to-struct
+   :make-cosmos-context
+   :compose-cosmos-ops 
+   :create-database    
+   :create-collection  
+   :create-document    
+   :list-databases     
+   :get-database       
+   :delete-database    
+   :list-collections   
+   :get-collection     
+   :delete-collection  
+   :query-documents    
+   :get-document       
+   :delete-document    
+   :replace-document   
+   :with-account       
+   :with-database
+   :with-container))
+
